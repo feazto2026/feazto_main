@@ -1,0 +1,53 @@
+# Canonical security configuration for the Spring Boot API.
+# Copy values into real config via environment variables — never commit secrets.
+#
+# Single-chain posture: Supabase JWKS is the ONLY JWT trust path. The legacy
+# HS256 shared-secret chain (config.SecurityConfig + JwtAuthFilter trusting the
+# JWT roles claim) has been DELETED. Do not reintroduce app.jwt.secret minting.
+#
+# Wiring:
+#   SUPABASE_URL=https://<project-ref>.supabase.co
+#   SUPABASE_JWT_ISSUER=https://<project-ref>.supabase.co/auth/v1
+#   SUPABASE_JWT_AUDIENCE=authenticated            (optional but recommended)
+#   SUPABASE_JWKS_URL=${SUPABASE_URL}/auth/v1/.well-known/jwks.json
+#   SUPABASE_ANON_KEY=<client anon key — backend does NOT use it to bypass RLS>
+#   SUPABASE_SERVICE_ROLE_KEY=<server-only; never ships to mobile/web clients>
+#   OTP_SECRET=<high-entropy server-only secret for SHA-256(code + secret)>
+#   PAYMENTS_WEBHOOK_SECRET=<shared HMAC secret with the payment provider>
+#   CORS_ALLOWED_ORIGINS=https://admin.feazto.example
+#
+security:
+  jwt:
+    # Must equal the Supabase issuer, e.g. https://<ref>.supabase.co/auth/v1
+    issuer: ${SUPABASE_JWT_ISSUER:}
+    # Optional but recommended audience check (e.g. "authenticated").
+    audience: ${SUPABASE_JWT_AUDIENCE:}
+    # JWKS endpoint used by SupabaseJwksSignatureVerifier (cached 10 min,
+    # single refresh on unknown kid, RS256/ES256 allowlist only).
+    jwks-url: ${SUPABASE_JWKS_URL:${SUPABASE_URL:}/auth/v1/.well-known/jwks.json}
+  cors:
+    # Comma-separated Admin Web origins only. Mobile apps do not rely on CORS.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+
+# OTP throttle is enforced in Redis; see OtpSecurityPolicy for canonical numbers.
+#   otp:{phone}        SHA-256(code+OTP_SECRET):attempts, 5-min TTL, 5 attempts then void
+#   otp:resend:{phone} 30 s cooldown marker
+#   otp:req:{phone}    5 sends/phone/hour (1 h TTL)
+#   otp:req:ip:{ip}    20 sends/IP/hour (SMS-pumping defence)
+app:
+  otp:
+    # Server-only OTP pepper. Required in prod; dev may use a local value but
+    # NEVER log or return codes/hashes. Missing secret fails closed at verify.
+    secret: ${OTP_SECRET:}
+
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+# Payment webhooks: provider signs the raw body (HMAC-SHA256 hex in
+# X-Webhook-Signature). Fail-closed in prod; unset only for local dev.
+payments:
+  webhook:
+    secret: ${PAYMENTS_WEBHOOK_SECRET:}

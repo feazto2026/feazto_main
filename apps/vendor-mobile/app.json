@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "FEAZTO Kitchen",
+    "slug": "feazto-vendor",
+    "scheme": "feazto-vendor",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": { "backgroundColor": "#111111" },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.feazto.kitchen" },
+    "android": { "package": "com.feazto.kitchen" },
+    "web": { "bundler": "metro", "output": "single" },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": { "typedRoutes": true },
+    "extra": { "API_BASE_URL": "http://localhost:8080", "API_VERSION": "v1" }
+  }
+}

@@ -1,0 +1,1101 @@
+openapi: 3.0.3
+info:
+  title: Codewild Food Platform API
+  version: 1.0.0
+  description: |
+    Authoritative business API for the Codewild home-food marketplace.
+    Base: /api/v1. Auth: Bearer <Supabase JWT> unless noted.
+    Envelope: {success, data|error{code,message,details}, message, requestId}.
+    Idempotency: send `Idempotency-Key: <uuid>` on POST /orders, POST /payments,
+    webhooks (provider event id), POST /payments/{id}/refund, POST /subscriptions,
+    POST /deliveries/{id}/pickup|complete, POST /orders/{id}/cancel.
+    Error codes: see docs/api/errors.md.
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local Spring Boot
+  - url: https://api.feazto.example/api/v1
+    description: Staging/Prod (placeholder)
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Users
+  - name: Customers
+  - name: Vendors
+  - name: Riders
+  - name: Menus
+  - name: Cart
+  - name: Orders
+  - name: Payments
+  - name: Subscriptions
+  - name: Deliveries
+  - name: Addresses
+  - name: Serviceability
+  - name: Slots
+  - name: Notifications
+  - name: Reviews
+  - name: Support
+  - name: Admin
+paths:
+  /auth/otp/request:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Request phone OTP (rate-limited, Redis-throttled)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone: { type: string, example: '+919876543210' }
+                role: { type: string, enum: [CUSTOMER, VENDOR, RIDER], default: CUSTOMER }
+      responses:
+        '200':
+          description: OTP sent (never returns the code)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+  /auth/otp/verify:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Verify OTP → session (Supabase Auth; backend links platform user)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, otp]
+              properties:
+                phone: { type: string }
+                otp: { type: string }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Session'
+        '410': { description: OTP expired (OTP_EXPIRED) }
+        '429': { description: Too many attempts (OTP_ATTEMPTS_EXCEEDED) }
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current platform identity (role, verification status)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlatformUser' }
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Session' }
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Own platform user record
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+    patch:
+      tags: [Users]
+      summary: Update own name/locale (limited fields)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string }, locale: { type: string } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /customers/me:
+    get:
+      tags: [Customers]
+      summary: Own customer profile (CUSTOMER)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+    put:
+      tags: [Customers]
+      summary: Upsert own profile (hometown, preferences)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomerProfileUpsert' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /addresses:
+    get:
+      tags: [Addresses]
+      summary: List own addresses
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+    post:
+      tags: [Addresses]
+      summary: Add address (geocoded + serviceability hint server-side)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddressInput' }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /addresses/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UuidId'
+    patch:
+      tags: [Addresses]
+      summary: Update own address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddressInput' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+    delete:
+      tags: [Addresses]
+      summary: Delete own address
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /vendors:
+    get:
+      tags: [Vendors]
+      summary: Discover vendors (paginated, filters)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: region
+          in: query
+          schema: { type: string }
+        - name: cuisine
+          in: query
+          schema: { type: string }
+        - name: lat
+          in: query
+          schema: { type: number }
+        - name: lng
+          in: query
+          schema: { type: number }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PagedVendors' } } } }
+  /vendors/search:
+    get:
+      tags: [Vendors]
+      summary: Hometown/cuisine discovery (Postgres search, no ES in Phase 1)
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: hometown
+          in: query
+          schema: { type: string }
+        - name: cuisine
+          in: query
+          schema: { type: string }
+        - name: mealType
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /vendors/me:
+    get:
+      tags: [Vendors]
+      summary: Own vendor profile + verification status (VENDOR)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /vendors/onboarding:
+    post:
+      tags: [Vendors]
+      summary: Submit onboarding (kitchen, cuisines, docs, payout refs)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VendorOnboarding' }
+      responses:
+        '201': { description: Submitted (status SUBMITTED), content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /vendors/me/menu-items:
+    post:
+      tags: [Vendors]
+      summary: Create own menu item (VENDOR, approved)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuItemInput' }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /vendors/me/availability:
+    put:
+      tags: [Vendors]
+      summary: Set availability / slots / capacity (VENDOR own)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { open: { type: boolean }, slots: { type: array, items: { type: string } }, capacityPerSlot: { type: integer } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /vendor/orders:
+    get:
+      tags: [Vendors]
+      summary: Today's/own orders queue (VENDOR)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /vendor/orders/{id}/accept:
+    post:
+      tags: [Vendors]
+      summary: Accept own order (PLACED→VENDOR_ACCEPTED)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+        '409': { description: Illegal state (STATE_CONFLICT) }
+  /vendor/orders/{id}/start-preparing:
+    post:
+      tags: [Vendors]
+      summary: Start preparation (→PREPARING)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /vendor/orders/{id}/ready:
+    post:
+      tags: [Vendors]
+      summary: Mark ready (→READY_FOR_PICKUP, triggers dispatch)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /riders/me:
+    get:
+      tags: [Riders]
+      summary: Own rider profile (RIDER)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /riders/onboarding:
+    post:
+      tags: [Riders]
+      summary: Submit rider KYC (vehicle, licence, bank/UPI refs)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '201': { description: Submitted, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /riders/me/availability:
+    put:
+      tags: [Riders]
+      summary: Go online/offline (RIDER)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [online], properties: { online: { type: boolean }, lat: { type: number }, lng: { type: number } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /menus/categories:
+    get:
+      tags: [Menus]
+      summary: List menu categories
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /menus/vendors/{vendorId}/items:
+    get:
+      tags: [Menus]
+      summary: Vendor menu (availability + slot filtered)
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: slot
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /menus/items/{id}:
+    get:
+      tags: [Menus]
+      summary: Menu item detail
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+        '404': { description: Not found (NOT_FOUND) }
+  /cart:
+    get:
+      tags: [Cart]
+      summary: Get own cart (server-priced preview)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+    delete:
+      tags: [Cart]
+      summary: Clear cart
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /cart/items:
+    post:
+      tags: [Cart]
+      summary: Add item (single-vendor enforced; 422 CART_VENDOR_MISMATCH)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [menuItemId, quantity]
+              properties:
+                menuItemId: { type: string, format: uuid }
+                quantity: { type: integer, minimum: 1 }
+                slot: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+        '422': { description: Vendor mismatch / unserviceable }
+  /cart/items/{itemId}:
+    parameters:
+      - $ref: '#/components/parameters/UuidId'
+    patch:
+      tags: [Cart]
+      summary: Change quantity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { quantity: { type: integer, minimum: 0 } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+    delete:
+      tags: [Cart]
+      summary: Remove item
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /cart/coupon:
+    post:
+      tags: [Cart]
+      summary: Apply coupon (server-validated)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [code], properties: { code: { type: string } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+        '422': { description: Invalid coupon (COUPON_INVALID) }
+  /orders:
+    post:
+      tags: [Orders]
+      summary: Create order (CUSTOMER). Idempotency-Key REQUIRED. Price recomputed server-side.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderCreate' }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+        '409': { description: Slot full / duplicate (ORDER_SLOT_FULL, DUPLICATE_REQUEST) }
+        '422': { description: Business rule (ADDRESS_NOT_SERVICEABLE, PRICE_MISMATCH…) }
+    get:
+      tags: [Orders]
+      summary: List own orders (paginated)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /orders/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UuidId'
+    get:
+      tags: [Orders]
+      summary: Order detail + timeline (owner / vendor / assigned rider / admin)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+        '403': { description: Not owner (PERMISSION_DENIED) }
+  /orders/{id}/cancel:
+    post:
+      tags: [Orders]
+      summary: Request cancellation (policy + refund computed server-side). Idempotent.
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { reason: { type: string } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+        '422': { description: Not cancellable (ORDER_NOT_CANCELLABLE) }
+  /orders/{id}/complete:
+    post:
+      tags: [Orders]
+      summary: Customer confirm → COMPLETED (where PoD policy requires it)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /payments:
+    post:
+      tags: [Payments]
+      summary: Create payment intent (adapter). Idempotency-Key REQUIRED.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentCreate' }
+      responses:
+        '201': { description: Intent created, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /payments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UuidId'
+    get:
+      tags: [Payments]
+      summary: Payment status (owner/admin)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /payments/webhooks/{provider}:
+    post:
+      tags: [Payments]
+      security: []
+      summary: Provider webhook. HMAC verified, idempotent on provider event id. NOT Bearer auth.
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string, enum: [razorpay, stripe] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: Accepted (always 200 on valid signature, even duplicates) }
+        '401': { description: Bad signature (WEBHOOK_SIGNATURE_INVALID) }
+  /payments/{id}/refund:
+    post:
+      tags: [Payments]
+      summary: Issue refund (permission-checked, reason required). Idempotent.
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [reason], properties: { reason: { type: string }, amount: { type: number } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+        '409': { description: Already refunded (REFUND_ALREADY_PROCESSED) }
+  /subscriptions/plans:
+    get:
+      tags: [Subscriptions]
+      summary: List vendor meal plans
+      parameters:
+        - name: vendorId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /subscriptions:
+    post:
+      tags: [Subscriptions]
+      summary: Create subscription (DRAFT). Idempotency-Key REQUIRED.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscriptionCreate' }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+    get:
+      tags: [Subscriptions]
+      summary: List own subscriptions
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /subscriptions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UuidId'
+    get:
+      tags: [Subscriptions]
+      summary: Subscription detail + generated daily orders
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /subscriptions/{id}/activate:
+    post:
+      tags: [Subscriptions]
+      summary: Activate after payment verification
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /subscriptions/{id}/pause:
+    post:
+      tags: [Subscriptions]
+      summary: Pause (stops future generation)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { reason: { type: string }, until: { type: string, format: date } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /subscriptions/{id}/resume:
+    post:
+      tags: [Subscriptions]
+      summary: Resume paused subscription
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /subscriptions/{id}/skip:
+    post:
+      tags: [Subscriptions]
+      summary: Skip one service date
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [serviceDate], properties: { serviceDate: { type: string, format: date } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /subscriptions/{id}/cancel:
+    post:
+      tags: [Subscriptions]
+      summary: Cancel per policy (future meals stop; generated orders follow order-cancel path)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { reason: { type: string } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /deliveries/available:
+    get:
+      tags: [Deliveries]
+      summary: Offers visible to online rider (RIDER)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /deliveries/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UuidId'
+    get:
+      tags: [Deliveries]
+      summary: Delivery detail (assigned rider / vendor / owner / admin)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /deliveries/{id}/accept:
+    post:
+      tags: [Deliveries]
+      summary: Accept offer (RIDER, within TTL)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+        '410': { description: Offer expired (ASSIGNMENT_EXPIRED) }
+  /deliveries/{id}/reject:
+    post:
+      tags: [Deliveries]
+      summary: Reject offer (re-queued to next rider)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /deliveries/{id}/arrive-pickup:
+    post:
+      tags: [Deliveries]
+      summary: Rider arrived at vendor
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /deliveries/{id}/pickup:
+    post:
+      tags: [Deliveries]
+      summary: QR pickup verify (assignment + state + nonce). Idempotent.
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [qrNonce], properties: { qrNonce: { type: string } } }
+      responses:
+        '200': { description: Picked up, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+        '422': { description: QR invalid (PICKUP_QR_INVALID) }
+  /deliveries/{id}/complete:
+    post:
+      tags: [Deliveries]
+      summary: Proof-of-delivery verify (OTP/QR/confirm). Idempotent.
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { proofType: { type: string, enum: [OTP, QR, CONFIRM] }, proofValue: { type: string } } }
+      responses:
+        '200': { description: Delivered, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+        '422': { description: Bad proof (DELIVERY_PROOF_INVALID) }
+  /serviceability/check:
+    post:
+      tags: [Serviceability]
+      summary: Can this vendor serve this address+slot? (domain capability, not UI filter)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vendorId, addressId]
+              properties:
+                vendorId: { type: string, format: uuid }
+                addressId: { type: string, format: uuid }
+                slot: { type: string }
+      responses:
+        '200':
+          description: Verdict with fee/ETA/reason
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          serviceable: { type: boolean }
+                          vendorId: { type: string }
+                          slot: { type: string }
+                          etaMinutes: { type: integer }
+                          deliveryFee: { type: number }
+                          reason: { type: string }
+  /slots:
+    get:
+      tags: [Slots]
+      summary: Meal slots + remaining capacity
+      parameters:
+        - name: vendorId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: date
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /notifications/me:
+    get:
+      tags: [Notifications]
+      summary: Own in-app notifications
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      summary: Mark read
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /notifications/devices:
+    post:
+      tags: [Notifications]
+      summary: Register push token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [token, platform], properties: { token: { type: string }, platform: { type: string, enum: [android, ios, web] } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /reviews:
+    post:
+      tags: [Reviews]
+      summary: Review completed order (one per order+target unless policy allows)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewInput' }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+        '409': { description: Duplicate (REVIEW_DUPLICATE) }
+        '422': { description: Not eligible (REVIEW_NOT_ELIGIBLE) }
+  /reviews/vendor/{vendorId}:
+    get:
+      tags: [Reviews]
+      summary: Public vendor reviews
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /support/tickets:
+    post:
+      tags: [Support]
+      summary: Open ticket (role-scoped)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [subject, message], properties: { subject: { type: string }, message: { type: string }, orderId: { type: string, format: uuid } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+    get:
+      tags: [Support]
+      summary: List own tickets
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /support/tickets/{id}/messages:
+    parameters:
+      - $ref: '#/components/parameters/UuidId'
+    post:
+      tags: [Support]
+      summary: Reply to own ticket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [message], properties: { message: { type: string } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /admin/vendors/{id}/approve:
+    post:
+      tags: [Admin]
+      summary: Approve vendor (VENDOR_APPROVE, reason audited)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { reason: { type: string }, commissionPct: { type: number } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /admin/vendors/{id}/reject:
+    post:
+      tags: [Admin]
+      summary: Reject / request changes / suspend (reason required)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [reason, action], properties: { reason: { type: string }, action: { type: string, enum: [REJECT, ACTION_REQUIRED, SUSPEND, REACTIVATE] } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /admin/orders:
+    get:
+      tags: [Admin]
+      summary: Ops order list (ORDER_VIEW, server pagination + filters)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /admin/orders/{id}/cancel:
+    post:
+      tags: [Admin]
+      summary: Ops cancel (ORDER_CANCEL, reason audited)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [reason], properties: { reason: { type: string } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /admin/riders/{id}/approve:
+    post:
+      tags: [Admin]
+      summary: Approve rider (RIDER_APPROVE)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { reason: { type: string } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /admin/payouts:
+    post:
+      tags: [Admin]
+      summary: Create payout batch (PAYOUT_MANAGE, idempotent)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { kind: { type: string, enum: [VENDOR, RIDER] }, periodFrom: { type: string, format: date }, periodTo: { type: string, format: date } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /admin/service-zones:
+    post:
+      tags: [Admin]
+      summary: Create service zone (SETTINGS_MANAGE)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string }, city: { type: string }, pincodes: { type: array, items: { type: string } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /admin/support/tickets/{id}/assign:
+    post:
+      tags: [Admin]
+      summary: Assign ticket (SUPPORT_ASSIGN)
+      parameters:
+        - $ref: '#/components/parameters/UuidId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { assigneeAdminId: { type: string, format: uuid } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+  /admin/audit-logs:
+    get:
+      tags: [Admin]
+      summary: Audit trail (AUDIT_VIEW, paginated)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Supabase JWT. Backend maps auth_user_id → platform user + roles.
+  parameters:
+    UuidId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, default: 0 }
+    Size:
+      name: size
+      in: query
+      schema: { type: integer, default: 20, maximum: 100 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+      description: UUIDv4 per intent; retry = same key. Missing → 400 on marked endpoints.
+  schemas:
+    SuccessEnvelope:
+      type: object
+      required: [success, data, requestId]
+      properties:
+        success: { type: boolean, example: true }
+        data: { type: object }
+        message: { type: string }
+        requestId: { type: string }
+    ErrorEnvelope:
+      type: object
+      required: [success, error, requestId]
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: ORDER_SLOT_FULL }
+            message: { type: string }
+            details: { type: object }
+        requestId: { type: string }
+    Session:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: integer }
+        user: { $ref: '#/components/schemas/PlatformUser' }
+    PlatformUser:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        authUserId: { type: string, format: uuid }
+        phone: { type: string }
+        roles: { type: array, items: { type: string } }
+        accountStatus: { type: string, enum: [ACTIVE, SUSPENDED, PENDING_VERIFICATION] }
+    CustomerProfileUpsert:
+      type: object
+      properties:
+        name: { type: string }
+        hometownRegion: { type: string }
+        preferredRegions: { type: array, items: { type: string } }
+        preferredCuisines: { type: array, items: { type: string } }
+        dietary: { type: array, items: { type: string } }
+    AddressInput:
+      type: object
+      required: [label, line1, city, pincode, lat, lng]
+      properties:
+        label: { type: string, example: Home }
+        line1: { type: string }
+        line2: { type: string }
+        landmark: { type: string }
+        city: { type: string }
+        pincode: { type: string }
+        lat: { type: number }
+        lng: { type: number }
+        instructions: { type: string }
+    VendorOnboarding:
+      type: object
+      required: [kitchenName, address, cuisines]
+      properties:
+        kitchenName: { type: string }
+        ownerName: { type: string }
+        address: { type: string }
+        lat: { type: number }
+        lng: { type: number }
+        nativeRegion: { type: string }
+        specialtyRegions: { type: array, items: { type: string } }
+        cuisineTags: { type: array, items: { type: string } }
+        serviceRadiusKm: { type: number }
+        capacityPerSlot: { type: integer }
+        slots: { type: array, items: { type: string } }
+        documentUrls: { type: array, items: { type: string } }
+        payoutRef: { type: string, description: Backend-issued upload refs only; no raw bank numbers in v1 }
+    MenuItemInput:
+      type: object
+      required: [name, price, category]
+      properties:
+        name: { type: string }
+        price: { type: number, minimum: 0 }
+        category: { type: string }
+        description: { type: string }
+        cuisineTags: { type: array, items: { type: string } }
+        regionTags: { type: array, items: { type: string } }
+        available: { type: boolean }
+        imageUrl: { type: string }
+    OrderCreate:
+      type: object
+      required: [vendorId, addressId, slot, items, paymentMethod]
+      properties:
+        vendorId: { type: string, format: uuid }
+        addressId: { type: string, format: uuid }
+        slot: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            required: [menuItemId, quantity]
+            properties:
+              menuItemId: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 1 }
+        couponCode: { type: string }
+        paymentMethod: { type: string, enum: [UPI, CARD, NET_BANKING, WALLET, COD] }
+    PaymentCreate:
+      type: object
+      required: [orderId, method]
+      properties:
+        orderId: { type: string, format: uuid }
+        method: { type: string, enum: [UPI, CARD, NET_BANKING, WALLET, COD] }
+        provider: { type: string, enum: [razorpay, stripe], default: razorpay }
+    SubscriptionCreate:
+      type: object
+      required: [vendorId, mealPlanId, addressId, slot, days]
+      properties:
+        vendorId: { type: string, format: uuid }
+        mealPlanId: { type: string, format: uuid }
+        addressId: { type: string, format: uuid }
+        slot: { type: string }
+        days: { type: array, items: { type: string, enum: [MON, TUE, WED, THU, FRI, SAT, SUN] } }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+    ReviewInput:
+      type: object
+      required: [orderId, target, rating]
+      properties:
+        orderId: { type: string, format: uuid }
+        target: { type: string, enum: [VENDOR, RIDER] }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+    PagedVendors:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items: { type: array, items: { type: object } }
+                page: { type: integer }
+                size: { type: integer }
+                total: { type: integer }

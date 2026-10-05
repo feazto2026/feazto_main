@@ -1,0 +1,26 @@
+// FEAZTO customer palette — preserved from legacy customer_app prototype
+// (warm cream header #fdfaeb, ink #111111, brand yellow #F5B700/#FFD21F).
+export const Colors = {
+  background: '#FAF8F2',
+  surface: '#FFFFFF',
+  surfaceWarm: '#FFF9E6',
+  cream: '#FFF9F0',
+  headerCream: '#fdfaeb',
+  border: '#EAE5D8',
+  borderWarm: '#FFE8A3',
+  textPrimary: '#111111',
+  textSecondary: '#555555',
+  textMuted: '#888888',
+  textWhite: '#FFFFFF',
+  yellowPrimary: '#F5B700',
+  yellowBright: '#FFD21F',
+  yellowSoft: '#FFF4CC',
+  darkPill: '#111111',
+  success: '#00C853',
+  successSoft: '#E8F5E9',
+  error: '#EF4444',
+  errorSoft: '#FFEBEE',
+  info: '#1976D2',
+  infoSoft: '#E3F2FD',
+  overlay: 'rgba(0, 0, 0, 0.6)',
+} as const;

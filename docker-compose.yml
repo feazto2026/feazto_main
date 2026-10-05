@@ -1,0 +1,108 @@
+name: feazto-local
+
+# Local / dev infrastructure for the Codewild food platform.
+# Canonical repo layout (see MASTER_PROMPT_ENHANCED.md section 37):
+#   services/api      -> Spring Boot modular monolith (authoritative business layer)
+#   apps/admin-web    -> React + Vite admin control plane (client of the API, never direct DB writes)
+#   supabase/         -> migrations / seed / config (PostgreSQL + Auth + Storage)
+#   customer_app/ vendor_app/ rider_app/ -> LEGACY React Native apps (do NOT modify here; see scripts/import-legacy.sh)
+#
+# Usage:
+#   docker compose up redis            # Redis only (default local dev: API runs via Maven, admin via Vite)
+#   docker compose up redis api        # Redis + containerised API
+#   docker compose up --build          # Full local stack (redis + api + admin-web)
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: feazto-redis
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - redis-data:/data
+      - ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - feazto-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    container_name: feazto-api
+    depends_on:
+      redis:
+        condition: service_healthy
+    # .env is optional so `docker compose up redis` works without any secrets present.
+    # Never commit a real .env — copy from .env.example instead.
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      SPRING_PROFILES_ACTIVE: "${SPRING_PROFILES_ACTIVE:-local}"
+      DATABASE_URL: "${DATABASE_URL:-}"
+      SUPABASE_URL: "${SUPABASE_URL:-}"
+      SUPABASE_SERVICE_ROLE_KEY: "${SUPABASE_SERVICE_ROLE_KEY:-}"
+      SUPABASE_ANON_KEY: "${SUPABASE_ANON_KEY:-}"
+      REDIS_URL: "${REDIS_URL:-redis://redis:6379}"
+      PAYMENT_SECRET: "${PAYMENT_SECRET:-}"
+      PAYMENT_WEBHOOK_SECRET: "${PAYMENT_WEBHOOK_SECRET:-}"
+      OTP_SECRET: "${OTP_SECRET:-}"
+      SERVER_PORT: "${SERVER_PORT:-8080}"
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    networks:
+      - feazto-net
+    restart: unless-stopped
+    healthcheck:
+      # Spring Boot Actuator if present, else the versioned API health endpoint.
+      # curl exists in the runtime image (see infra/docker/api.Dockerfile).
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || curl -fsS http://localhost:8080/api/v1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  admin-web:
+    build:
+      context: .
+      dockerfile: infra/docker/admin.Dockerfile
+      args:
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-http://localhost:8080/api/v1}"
+    container_name: feazto-admin-web
+    depends_on:
+      api:
+        condition: service_started
+    env_file:
+      - path: ./.env
+        required: false
+    ports:
+      - "${ADMIN_WEB_PORT:-5173}:80"
+    networks:
+      - feazto-net
+    restart: unless-stopped
+    healthcheck:
+      # nginx serves the built Vite app; wget is available in nginx:alpine.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+networks:
+  feazto-net:
+    name: feazto-net
+    driver: bridge
+
+volumes:
+  redis-data:
+    name: feazto-redis-data
+    # Redis is supporting state only (cache / locks / idempotency / rate limits).
+    # PostgreSQL via Supabase is the system of record — see docs/operations/backup.md.

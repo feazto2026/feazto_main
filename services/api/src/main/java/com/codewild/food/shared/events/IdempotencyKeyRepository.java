@@ -1,0 +1,13 @@
+package com.codewild.food.shared.events;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface IdempotencyKeyRepository extends JpaRepository<IdempotencyKey, UUID> {
+  /** Durable idempotency lookup UNIQUE(scope,key). */
+  Optional<IdempotencyKey> findByScopeAndKey(String scope, String key);
+  List<IdempotencyKey> findByExpiresAtBefore(Instant now);
+}

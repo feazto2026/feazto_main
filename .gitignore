@@ -1,0 +1,33 @@
+# --- env: block real secrets, allow templates ---
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+!.env.example
+!.env.*.example
+
+# --- deps / build (never commit) ---
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+
+# --- OS / IDE ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- local supabase / tools ---
+supabase/.branches/
+supabase/.temp/
+*.log
+
+target/
+*.class
+
