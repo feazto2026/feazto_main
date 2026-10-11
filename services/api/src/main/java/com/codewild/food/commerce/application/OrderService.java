@@ -15,10 +15,13 @@ import com.codewild.food.shared.errors.ErrorCodes;
 import com.codewild.food.shared.events.DomainEvent;
 import com.codewild.food.shared.events.OutboxService;
 import com.codewild.food.shared.idempotency.IdempotencyService;
+import com.codewild.food.customer.domain.CustomerProfile;
+import com.codewild.food.customer.infrastructure.CustomerProfileRepository;
 import com.codewild.food.shared.security.PermissionEvaluator;
 import com.codewild.food.shared.security.PlatformUser;
 import com.codewild.food.shared.security.SecurityUtils;
 import java.math.BigDecimal;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,14 +35,37 @@ public class OrderService {
   private final VendorServiceZoneRepository vendorZones;
   private final IdempotencyService idempotency;
   private final OutboxService outbox;
+  private final CustomerProfileRepository profiles;
 
   public OrderService(OrderRepository orders, MenuItemRepository menuItems,
                       VendorRepository vendors, VendorSlotRepository vendorSlots,
                       VendorServiceZoneRepository vendorZones,
-                      IdempotencyService idempotency, OutboxService outbox) {
+                      IdempotencyService idempotency, OutboxService outbox,
+                      CustomerProfileRepository profiles) {
     this.orders = orders; this.menuItems = menuItems;
     this.vendors = vendors; this.vendorSlots = vendorSlots; this.vendorZones = vendorZones;
-    this.idempotency = idempotency; this.outbox = outbox;
+    this.idempotency = idempotency; this.outbox = outbox; this.profiles = profiles;
+  }
+
+  /** orders.customer_id REFERENCES customer_profiles(id) — never platform_users.id. */
+  private UUID resolveCustomerProfileId() {
+    PlatformUser me = SecurityUtils.currentUser();
+    if (me.getCustomerId() != null) {
+      return me.getCustomerId();
+    }
+    UUID userUuid = me.getUserId();
+    return profiles.findByUserId(userUuid)
+        .map(CustomerProfile::getId)
+        .orElseGet(() -> profiles.save(new CustomerProfile(userUuid, "")).getId());
+  }
+
+  private static boolean isOrderOwner(PlatformUser me, UUID orderCustomerId) {
+    if (me == null || orderCustomerId == null) {
+      return false;
+    }
+    // New rows: customer_profiles.id; legacy rows: platform_users.id.
+    return Objects.equals(orderCustomerId, me.getCustomerId())
+        || Objects.equals(orderCustomerId, me.getUserId());
   }
 
   @Transactional
@@ -84,7 +110,7 @@ public class OrderService {
       }
     }
 
-    UUID customerUuid = SecurityUtils.currentUserUuid();
+    UUID customerUuid = resolveCustomerProfileId();
     OrderEntity order = new OrderEntity();
     order.setCustomerId(customerUuid);
     order.setVendorId(vendorUuid);
@@ -128,13 +154,24 @@ public class OrderService {
     order.setPlatformCommissionPaiseSnapshot(commission);
     order.setVendorPayoutPaiseSnapshot(Math.max(0, subtotalPaise - commission));
     order.setItemCount(order.getItems().size());
+    // Fix 23502 null order_id: @OneToMany(cascade ALL) @JoinColumn(name=order_id) on
+    // OrderEntity.items inserts children with NULL order_id then UPDATEs, violating
+    // order_items.order_id NOT NULL. Service-only fix: persist parent first to allocate
+    // UUID, then backfill OrderItem.orderId before cascading the children.
+    java.util.List<OrderItem> pendingItems = new java.util.ArrayList<>(order.getItems());
+    order.getItems().clear();
     if (order.getDeliveryAddressSnapshot() == null) {
       order.setDeliveryAddressSnapshot("{}");
     }
     // DB CHECK backstop: total = subtotal - discount + tax + fees.
     order.recomputeTotalOrThrow();
     order.transitionTo(OrderStateMachine.State.PAYMENT_PENDING);
-    OrderEntity saved = orders.save(order); // unique constraint on idempotencyKey is DB backstop
+    OrderEntity saved = orders.saveAndFlush(order); // allocate parent UUID first
+    for (OrderItem it : pendingItems) {
+      it.setOrderId(saved.getId());
+      saved.getItems().add(it);
+    }
+    saved = orders.saveAndFlush(saved); // cascade children with order_id populated
     outbox.save(DomainEvent.of("OrderCreated", "Order", saved.getId().toString(), "{}"));
     return new OrderResponse(saved.getId().toString(), saved.getStatus().name(),
         String.valueOf(saved.getTotalAmount()));
@@ -149,7 +186,8 @@ public class OrderService {
     PlatformUser me = SecurityUtils.currentUser();
     UUID ownerUuid = order.getCustomerId();
     UUID vendorUuid = order.getVendorId();
-    boolean ownerOrPrivileged = ownerUuid != null && PermissionEvaluator.canAccessOrder(me, ownerUuid);
+    boolean ownerOrPrivileged = ownerUuid != null
+        && (isOrderOwner(me, ownerUuid) || PermissionEvaluator.canAccessOrder(me, ownerUuid));
     boolean vendorOfOrder = vendorUuid != null && PermissionEvaluator.canVendorAccessOrder(me, vendorUuid);
     if (!ownerOrPrivileged && !vendorOfOrder) {
       throw new BusinessException(ErrorCodes.FORBIDDEN, "You do not have access to this order");
@@ -168,7 +206,8 @@ public class OrderService {
     PlatformUser me = SecurityUtils.currentUser();
     UUID ownerUuid = order.getCustomerId();
     UUID vendorUuid = order.getVendorId();
-    boolean allowed = (ownerUuid != null && PermissionEvaluator.canAccessOrder(me, ownerUuid))
+    boolean allowed = (ownerUuid != null
+            && (isOrderOwner(me, ownerUuid) || PermissionEvaluator.canAccessOrder(me, ownerUuid)))
         || (vendorUuid != null && PermissionEvaluator.canVendorAccessOrder(me, vendorUuid));
     if (!allowed) {
       throw new BusinessException(ErrorCodes.FORBIDDEN, "You do not have access to this order");

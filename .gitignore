@@ -31,3 +31,19 @@ supabase/.temp/
 target/
 *.class
 
+# --- local secrets / run noise (never commit; API keys only in .env) ---
+backend-start-*.cmd
+!backend-start-*.example.cmd
+*.pid
+backend-*.log
+backend-*.err.log
+*.prev.log
+.*token*.txt
+.final_token.txt
+.probe_token.txt
+.ps_token.txt
+probe_*
+probe*.json
+scripts/local/run-api-*.cmd
+scripts/local/run-api-*.sh
+

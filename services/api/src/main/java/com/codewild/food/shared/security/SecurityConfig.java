@@ -54,6 +54,7 @@ public class SecurityConfig {
             "/api/v1/auth/otp/verify",
             "/api/v1/auth/otp/resend",
             "/api/v1/auth/refresh",
+            "/api/v1/admin/auth/login",
             "/api/v1/payments/webhook",
             "/api/v1/payments/webhooks",
             "/actuator/health",
@@ -109,7 +110,8 @@ public class SecurityConfig {
                                 "/api/v1/auth/otp/send",
                                 "/api/v1/auth/otp/verify",
                                 "/api/v1/auth/otp/resend",
-                                "/api/v1/auth/refresh")
+                                "/api/v1/auth/refresh",
+                                "/api/v1/admin/auth/login")
                         .permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/payments/webhook",

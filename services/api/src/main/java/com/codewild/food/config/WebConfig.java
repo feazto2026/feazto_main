@@ -22,7 +22,7 @@ public class WebConfig implements WebMvcConfigurer {
   }
 
   @Bean
-  public FilterRegistrationBean<RequestIdFilter> requestIdFilter() {
+  public FilterRegistrationBean<RequestIdFilter> requestIdFilterRegistration() {
     FilterRegistrationBean<RequestIdFilter> b = new FilterRegistrationBean<>(new RequestIdFilter());
     b.setOrder(Ordered.HIGHEST_PRECEDENCE);
     b.addUrlPatterns("/api/*");
@@ -30,7 +30,7 @@ public class WebConfig implements WebMvcConfigurer {
   }
 
   @Bean
-  public FilterRegistrationBean<IdempotencyFilter> idempotencyFilter(IdempotencyFilter f) {
+  public FilterRegistrationBean<IdempotencyFilter> idempotencyFilterRegistration(IdempotencyFilter f) {
     FilterRegistrationBean<IdempotencyFilter> b = new FilterRegistrationBean<>(f);
     b.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
     b.addUrlPatterns("/api/*");

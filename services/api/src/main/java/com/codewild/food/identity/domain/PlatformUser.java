@@ -53,6 +53,9 @@ public class PlatformUser {
   @Column(name = "last_login_at")
   private Instant lastLoginAt;
 
+  public Instant getLastLoginAt() { return lastLoginAt; }
+  public void setLastLoginAt(Instant v) { this.lastLoginAt = v; }
+
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "metadata", nullable = false, columnDefinition = "jsonb")
   private String metadataJson = "{}";

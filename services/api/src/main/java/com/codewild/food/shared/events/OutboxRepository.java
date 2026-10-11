@@ -9,6 +9,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface OutboxRepository extends JpaRepository<OutboxEvent, UUID> {
   List<OutboxEvent> findByStatus(OutboxEvent.Status status);
@@ -20,9 +21,9 @@ public interface OutboxRepository extends JpaRepository<OutboxEvent, UUID> {
 
   /** Publisher scan: PENDING + due, oldest first, row-locked SKIP LOCKED. */
   @Lock(LockModeType.PESSIMISTIC_WRITE)
-  @Query("select o from OutboxEvent o where o.status = com.codewild.food.shared.events.OutboxEvent.Status.PENDING "
+  @Query("select o from OutboxEvent o where o.status = com.codewild.food.shared.events.OutboxEvent$Status.PENDING "
     + "and o.nextAttemptAt <= :now order by o.nextAttemptAt asc")
-  List<OutboxEvent> claimDue(Instant now, Pageable pageable);
+  List<OutboxEvent> claimDue(@Param("now") Instant now, Pageable pageable);
 
   @Query(value = "select * from outbox_events where status = 'PENDING' "
     + "and next_attempt_at <= now() order by next_attempt_at asc limit 100 "

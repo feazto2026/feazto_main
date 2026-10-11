@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface MenuItemRepository extends JpaRepository<MenuItem, UUID> {
   List<MenuItem> findByVendorIdAndActiveTrueAndAvailableTrueAndDeletedAtIsNull(UUID vendorId);
@@ -22,11 +23,11 @@ public interface MenuItemRepository extends JpaRepository<MenuItem, UUID> {
     and i.active = true and i.available = true and i.deletedAt is null
     and (:q is null or lower(i.name) like lower(concat('%', :q, '%')))
     """)
-  Page<MenuItem> searchVendorMenu(UUID vendorId, String q, Pageable pageable);
+  Page<MenuItem> searchVendorMenu(@Param("vendorId") UUID vendorId, @Param("q") String q, Pageable pageable);
 
   @Query("""
     select i from MenuItem i where i.active = true and i.available = true and i.deletedAt is null
     and (:q is null or lower(i.name) like lower(concat('%', :q, '%')))
     """)
-  Page<MenuItem> searchAll(String q, Pageable pageable);
+  Page<MenuItem> searchAll(@Param("q") String q, Pageable pageable);
 }

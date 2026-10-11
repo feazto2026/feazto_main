@@ -45,7 +45,15 @@ public class AdminService {
     audit.log(SecurityUtils.currentUserId(), approve ? "VENDOR_APPROVE" : "VENDOR_REJECT",
         "VendorProfile", vendorId, reason);
     outbox.save(DomainEvent.of(approve ? "VendorApproved" : "VendorRejected",
-        "VendorProfile", vendorId, "{\"reason\":\"" + reason + "\"}"));
+        "VendorProfile", vendorId, "{\"reason\":" + jsonQuote(reason) + "}"));
     return v.getStatus();
+  }
+
+  private static String jsonQuote(String s) {
+    if (s == null) {
+      return "null";
+    }
+    return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"")
+        .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\"";
   }
 }

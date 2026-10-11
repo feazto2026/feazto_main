@@ -4,6 +4,8 @@ import com.codewild.food.shared.observability.RequestIdFilter;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.ConstraintViolationException;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+  private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
   private String reqId() {
     String id = MDC.get(RequestIdFilter.REQUEST_ID_MDC);
@@ -25,7 +28,8 @@ public class GlobalExceptionHandler {
     HttpStatus status = switch (ex.getCode()) {
       case ErrorCodes.NOT_FOUND -> HttpStatus.NOT_FOUND;
       case ErrorCodes.FORBIDDEN -> HttpStatus.FORBIDDEN;
-      case ErrorCodes.UNAUTHORIZED, ErrorCodes.UNAUTHENTICATED -> HttpStatus.UNAUTHORIZED;
+      case ErrorCodes.UNAUTHORIZED, ErrorCodes.UNAUTHENTICATED,
+           ErrorCodes.INVALID_CREDENTIALS -> HttpStatus.UNAUTHORIZED;
       case ErrorCodes.TOKEN_EXPIRED -> HttpStatus.UNAUTHORIZED;
       case ErrorCodes.TOKEN_INVALID -> HttpStatus.UNAUTHORIZED;
       case ErrorCodes.UNKNOWN_USER -> HttpStatus.UNAUTHORIZED;
@@ -68,7 +72,9 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ApiResponse.ErrorResponse> fallback(Exception ex) {
+    String id = reqId();
+    log.error("Unhandled exception requestId={}", id, ex);
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-        .body(ApiResponse.ErrorResponse.of(ErrorCodes.INTERNAL, "Unexpected error", Map.of(), reqId()));
+        .body(ApiResponse.ErrorResponse.of(ErrorCodes.INTERNAL, "Unexpected error", Map.of(), id));
   }
 }

@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface VendorSlotRepository extends JpaRepository<VendorSlot, UUID> {
   List<VendorSlot> findByVendorIdAndAvailableTrue(UUID vendorId);
@@ -16,9 +17,9 @@ public interface VendorSlotRepository extends JpaRepository<VendorSlot, UUID> {
   /** Slot capacity check: row-locked read for order placement (SELECT FOR UPDATE). */
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("select vs from VendorSlot vs where vs.id = :id")
-  Optional<VendorSlot> findByIdForUpdate(UUID id);
+  Optional<VendorSlot> findByIdForUpdate(@Param("id") UUID id);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("select vs from VendorSlot vs where vs.vendorId = :vendorId and vs.slotId = :slotId")
-  Optional<VendorSlot> findByVendorAndSlotForUpdate(UUID vendorId, UUID slotId);
+  Optional<VendorSlot> findByVendorAndSlotForUpdate(@Param("vendorId") UUID vendorId, @Param("slotId") UUID slotId);
 }

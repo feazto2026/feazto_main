@@ -38,6 +38,7 @@ public class AuditLog {
 
   @Column(name = "reason")
   private String reason;
+  @JdbcTypeCode(SqlTypes.INET)
   @Column(name = "ip_address", columnDefinition = "inet")
   private String ipAddress;
   @Column(name = "user_agent")

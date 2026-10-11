@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface RiderRepository extends JpaRepository<RiderProfile, UUID> {
   Optional<RiderProfile> findByUserId(UUID userId);
@@ -22,10 +23,10 @@ public interface RiderRepository extends JpaRepository<RiderProfile, UUID> {
 
   /** Dispatch candidate scan: zone (city) + online + approved/active. */
   @Query("select r from RiderProfile r where r.online = true and r.city = :city "
-    + "and (r.status = com.codewild.food.fulfillment.domain.RiderProfile.Status.APPROVED "
-    + "or r.status = com.codewild.food.fulfillment.domain.RiderProfile.Status.ACTIVE) "
+    + "and (r.status = com.codewild.food.fulfillment.domain.RiderProfile$Status.APPROVED "
+    + "or r.status = com.codewild.food.fulfillment.domain.RiderProfile$Status.ACTIVE) "
     + "order by r.totalDeliveries asc")
-  List<RiderProfile> findDispatchCandidates(String city);
+  List<RiderProfile> findDispatchCandidates(@Param("city") String city);
 
   default List<RiderProfile> findByAvailableTrueAndStatus(String status) {
     try {

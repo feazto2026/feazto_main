@@ -12,6 +12,20 @@
 #   SUPABASE_JWKS_URL=${SUPABASE_URL}/auth/v1/.well-known/jwks.json
 #   SUPABASE_ANON_KEY=<client anon key — backend does NOT use it to bypass RLS>
 #   SUPABASE_SERVICE_ROLE_KEY=<server-only; never ships to mobile/web clients>
+#
+# Admin Web auth (Supabase Auth is the password truth):
+#   POST /api/v1/admin/auth/login calls GoTrue
+#     ${SUPABASE_URL}/auth/v1/token?grant_type=password
+#   with the `apikey` header = SUPABASE_ANON_KEY (publishable client key).
+#   NEVER use SUPABASE_SERVICE_ROLE_KEY here or anywhere in request paths —
+#   the service role bypasses RLS and must never leave server-side admin tooling.
+#   Redis throttle: admin:login:req:ip:{ip} 30/h + admin:login:req:email:{lower}
+#   10/h (1 h TTL, fail-closed). See operations/application/AdminAuthService.
+supabase:
+  # Base project URL for the GoTrue password grant used by admin login.
+  url: ${SUPABASE_URL:}
+  # Anon (publishable) key sent as `apikey` to GoTrue. NEVER the service-role key.
+  anon-key: ${SUPABASE_ANON_KEY:}
 #   OTP_SECRET=<high-entropy server-only secret for SHA-256(code + secret)>
 #   PAYMENTS_WEBHOOK_SECRET=<shared HMAC secret with the payment provider>
 #   CORS_ALLOWED_ORIGINS=https://admin.feazto.example

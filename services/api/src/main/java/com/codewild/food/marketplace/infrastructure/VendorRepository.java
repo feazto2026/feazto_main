@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface VendorRepository extends JpaRepository<VendorProfile, UUID> {
   Optional<VendorProfile> findByUserId(UUID userId);
@@ -26,14 +27,14 @@ public interface VendorRepository extends JpaRepository<VendorProfile, UUID> {
   @Query("""
     select distinct v from VendorProfile v
     left join MenuItem i on i.vendorId = v.id
-    where v.status = com.codewild.food.marketplace.domain.VendorProfile.Status.APPROVED
+    where v.status = com.codewild.food.marketplace.domain.VendorProfile$Status.APPROVED
       and v.active = true and v.deletedAt is null
       and (:q is null or lower(v.kitchenName) like lower(concat('%', :q, '%'))
         or lower(i.name) like lower(concat('%', :q, '%')))
       and (:city is null or v.city = :city)
     """)
-  Page<VendorProfile> search(String q, String city, Pageable pageable);
+  Page<VendorProfile> search(@Param("q") String q, @Param("city") String city, Pageable pageable);
 
-  @Query("select v from VendorProfile v where v.status = com.codewild.food.marketplace.domain.VendorProfile.Status.APPROVED and v.active = true and v.deletedAt is null")
+  @Query("select v from VendorProfile v where v.status = com.codewild.food.marketplace.domain.VendorProfile$Status.APPROVED and v.active = true and v.deletedAt is null")
   List<VendorProfile> findApprovedActive();
 }

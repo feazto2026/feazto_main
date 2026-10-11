@@ -20,6 +20,7 @@ public final class ErrorCodes {
   public static final String OTP_ATTEMPTS_EXCEEDED = "OTP_ATTEMPTS_EXCEEDED";
   public static final String OTP_RESEND_TOO_SOON = "OTP_RESEND_TOO_SOON";
   public static final String OTP_INVALID = "OTP_INVALID";
+  public static final String INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
   public static final String UNKNOWN_USER = "UNKNOWN_USER";
   public static final String AUTH_MISCONFIGURED = "AUTH_MISCONFIGURED";
   public static final String VENDOR_NOT_APPROVED = "VENDOR_NOT_APPROVED";
